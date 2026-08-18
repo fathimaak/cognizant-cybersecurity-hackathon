@@ -1,0 +1,17 @@
+{
+  "BENIGN": 0.0,
+  "DDoS": 1.0,
+  "DoS Hulk": 0.85,
+  "DoS GoldenEye": 0.85,
+  "DoS Slowloris": 0.7,
+  "DoS Slowhttptest": 0.7,
+  "PortScan": 0.4,
+  "Bot": 0.8,
+  "Infiltration": 1.0,
+  "Heartbleed": 1.0,
+  "FTP-Patator": 0.6,
+  "SSH-Patator": 0.6,
+  "Web Attack - Brute Force": 0.7,
+  "Web Attack - XSS": 0.75,
+  "Web Attack - SQL Injection": 0.9
+}
