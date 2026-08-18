@@ -2,7 +2,6 @@
 data/raw/
 data/processed/
 data/interim/
-*.csv
 *.parquet
 
 # Models / artifacts

@@ -100,37 +100,37 @@
   "model_selection_criterion": "macro_f1 + rare_class_recall (primary), weighted_f1 (secondary), train_seconds (tiebreaker)",
   "results": {
     "LogisticRegression": {
-      "macro_f1": 0.5596617674499458,
-      "weighted_f1": 0.9007479566398154,
-      "rare_class_recall": 0.9116538023194729,
+      "macro_f1": 0.5452747273360324,
+      "weighted_f1": 0.9002428616420022,
+      "rare_class_recall": 0.9109020468362043,
       "ultra_rare_recalls": {
-        "Web Attack - SQL Injection": 1.0,
+        "Infiltration": 0.8571428571428571,
         "Heartbleed": 1.0,
-        "Infiltration": 0.8571428571428571
+        "Web Attack - SQL Injection": 1.0
       },
-      "train_seconds": 1007.0030517578125
+      "train_seconds": 677.6065208911896
     },
     "RandomForest": {
       "macro_f1": 0.8898806571529587,
       "weighted_f1": 0.9982232920512843,
       "rare_class_recall": 0.9141125048633287,
       "ultra_rare_recalls": {
-        "Web Attack - SQL Injection": 0.5,
+        "Infiltration": 0.8571428571428571,
         "Heartbleed": 1.0,
-        "Infiltration": 0.8571428571428571
+        "Web Attack - SQL Injection": 0.5
       },
-      "train_seconds": 148.01397609710693
+      "train_seconds": 136.22829723358154
     },
     "XGBoost": {
       "macro_f1": 0.914322289252729,
       "weighted_f1": 0.9984810803106762,
       "rare_class_recall": 0.921099246730336,
       "ultra_rare_recalls": {
-        "Web Attack - SQL Injection": 0.75,
+        "Infiltration": 1.0,
         "Heartbleed": 1.0,
-        "Infiltration": 1.0
+        "Web Attack - SQL Injection": 0.75
       },
-      "train_seconds": 340.69903898239136
+      "train_seconds": 261.9822940826416
     }
   }
 }
