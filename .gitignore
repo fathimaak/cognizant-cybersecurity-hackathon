@@ -1,43 +1,30 @@
-# Virtual environment
-.venv/
-venv/
-env/
+# Data — never commit
+data/raw/
+data/processed/
+data/interim/
+*.csv
+*.parquet
+
+# Models / artifacts
+models/*.pkl
+models/*.joblib
+!models/.gitkeep
 
 # Python
 __pycache__/
-*.py[cod]
-*.pyo
+*.pyc
+.venv/
+venv/
+env/
+*.egg-info/
 
 # Jupyter
 .ipynb_checkpoints/
 
-# Raw datasets
-data/raw/*
-!data/raw/.gitkeep
-
-# Processed datasets
-data/processed/*
-!data/processed/.gitkeep
-
-# Trained models
-models/*
-!models/.gitkeep
-
-# Results
-results/*
-!results/.gitkeep
-
-# Environment / secrets
-.env
-*.env
-kaggle.json
-
-# IDE
-.vscode/
-
-# OS files
+# OS / editor
 .DS_Store
 Thumbs.db
+.vscode/
 
-# Logs
-*.log
+# Streamlit
+.streamlit/secrets.toml
