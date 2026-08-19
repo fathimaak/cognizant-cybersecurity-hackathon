@@ -1,0 +1,16 @@
+intended_class,correct,total,generator_detection_rate
+BENIGN,97,100,0.97
+Bot,30,100,0.3
+DDoS,73,100,0.73
+DoS GoldenEye,72,100,0.72
+DoS Hulk,79,100,0.79
+DoS Slowhttptest,29,100,0.29
+DoS Slowloris,45,100,0.45
+FTP-Patator,100,100,1.0
+Heartbleed,100,100,1.0
+Infiltration,91,100,0.91
+PortScan,71,100,0.71
+SSH-Patator,100,100,1.0
+Web Attack - Brute Force,59,100,0.59
+Web Attack - SQL Injection,75,100,0.75
+Web Attack - XSS,11,100,0.11

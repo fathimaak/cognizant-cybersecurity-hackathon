@@ -7,7 +7,17 @@ data/interim/
 # Models / artifacts
 models/*.pkl
 models/*.joblib
+!models/xgboost_model.joblib
+!models/isolation_forest_model.joblib
+!models/label_encoder.joblib
+!models/synthetic_generator.joblib
+!models/model_metadata.json
 !models/.gitkeep
+
+
+# Deployment model
+!models/xgboost_model.joblib
+!models/label_encoder.joblib
 
 # Python
 __pycache__/
