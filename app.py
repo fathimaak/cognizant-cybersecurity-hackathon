@@ -1,5 +1,5 @@
 """
-app.py — SOC Dashboard, redesigned with tabs and MITRE/triage integration.
+app.py — SOC Dashboard: tabs, MITRE/triage, SHAP explainability, "Why is this Critical?" panel.
 """
 
 import json
@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 from pathlib import Path
-from src.triage import get_global_top_features, build_triage_note, MITRE_MAPPING
+from src.triage import get_global_top_features, get_shap_top_features, build_triage_note, MITRE_MAPPING
 
 MODELS_DIR = Path("models")
 PROCESSED_DIR = Path("data/processed")
@@ -96,9 +96,65 @@ def process_event(row, feature_cols, artifacts):
     a_score = anomaly_score_single(artifacts["iso_model"], X, artifacts["anchors"])
     clf_output = predict_row(artifacts["clf"], artifacts["le"], X, artifacts["clf_name"])
     scoring = score_event(clf_output, a_score, artifacts["category_impact"])
-    triage_note = build_triage_note(clf_output["attack_category"], scoring["severity"],
-                                     clf_output["confidence"], artifacts["top_features"])
-    return {"true_label": row.get("Label", "unknown"), **clf_output, **scoring, "triage_note": triage_note}
+
+    shap_features = get_shap_top_features(artifacts["clf"], artifacts["clf_name"], X, feature_cols)
+    if shap_features:
+        triage_note = build_triage_note(clf_output["attack_category"], scoring["severity"],
+                                         clf_output["confidence"], shap_features, is_shap=True)
+    else:
+        triage_note = build_triage_note(clf_output["attack_category"], scoring["severity"],
+                                         clf_output["confidence"], artifacts["top_features"], is_shap=False)
+
+    impact = artifacts["category_impact"].get(clf_output["attack_category"], 0.5)
+    score_breakdown = {
+        "attack_confidence_pct": clf_output["attack_confidence"] * 100,
+        "attack_confidence_contribution": 0.50 * clf_output["attack_confidence"] * 100,
+        "anomaly_pct": a_score * 100,
+        "anomaly_contribution": 0.30 * a_score * 100,
+        "category_impact_pct": impact * 100,
+        "category_impact_contribution": 0.20 * impact * 100,
+    }
+
+    return {"true_label": row.get("Label", "unknown"), **clf_output, **scoring,
+            "triage_note": triage_note, "shap_features": shap_features,
+            "score_breakdown": score_breakdown}
+
+
+def render_explain_panel(event):
+    st.markdown(f"### Why is this **{event['severity']}**?")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Predicted Category", event["attack_category"])
+    c2.metric("Classifier Confidence", f"{event['confidence']*100:.1f}%")
+    c3.metric("Threat Score", f"{event['threat_score']:.1f} / 100")
+
+    st.markdown("---")
+    st.markdown("**SHAP — why XGBoost predicted this category**")
+    st.caption("SHAP explains the classifier's prediction. It does NOT determine severity — that comes from the threat-score formula below.")
+    if event["shap_features"]:
+        shap_df = pd.DataFrame(event["shap_features"], columns=["Feature", "SHAP value"])
+        shap_df["Direction"] = shap_df["SHAP value"].apply(lambda v: "↑ pushed toward this class" if v > 0 else "↓ pushed away")
+        st.dataframe(shap_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("SHAP explanation unavailable for this event (fell back to global feature importance in the triage note).")
+
+    st.markdown("---")
+    st.markdown("**Threat score breakdown — why severity is *" + event["severity"] + "***")
+    bd = event["score_breakdown"]
+    breakdown_df = pd.DataFrame([
+        {"Component": "Classifier attack confidence (50% weight)",
+         "Raw value": f"{bd['attack_confidence_pct']:.1f}%", "Contributes": f"{bd['attack_confidence_contribution']:.1f} pts"},
+        {"Component": "Anomaly score (30% weight)",
+         "Raw value": f"{bd['anomaly_pct']:.1f}%", "Contributes": f"{bd['anomaly_contribution']:.1f} pts"},
+        {"Component": "Category impact (20% weight)",
+         "Raw value": f"{bd['category_impact_pct']:.1f}%", "Contributes": f"{bd['category_impact_contribution']:.1f} pts"},
+    ])
+    st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+    st.caption(f"Total: {bd['attack_confidence_contribution']:.1f} + {bd['anomaly_contribution']:.1f} + {bd['category_impact_contribution']:.1f} = {event['threat_score']:.1f}")
+
+    st.markdown("---")
+    st.markdown("**MITRE ATT&CK & recommended action**")
+    st.write(event["triage_note"])
 
 
 artifacts = load_artifacts()
@@ -129,6 +185,9 @@ tab1, tab2, tab3, tab4 = st.tabs(["🔴 Live Feed", "📊 Analytics", "🧭 Thre
 with tab1:
     counters_ph = st.empty()
     feed_ph = st.empty()
+    st.subheader("🔍 Explain an Event")
+    explain_select_ph = st.empty()
+    explain_panel_ph = st.empty()
     timeline_ph = st.empty()
 
 with tab2:
@@ -176,36 +235,51 @@ def render(events, total, threats, critical):
         c3.metric("Critical Alerts", critical)
         c4.metric("Detection Rate", f"{(threats / total * 100 if total else 0):.1f}%")
 
-    if events:
-        feed_df = pd.DataFrame(events[-20:][::-1])
-        feed_ph.dataframe(
-            feed_df[["true_label", "attack_category", "confidence", "anomaly_score", "threat_score", "severity"]],
-            use_container_width=True, height=380)
-
-        ev_df = pd.DataFrame(events)
-        timeline = ev_df.reset_index().rename(columns={"index": "event_order"})
-        fig1 = px.scatter(timeline, x="event_order", y="threat_score", color="severity",
-                           color_discrete_map=SEVERITY_COLOR)
-        timeline_ph.plotly_chart(fig1, use_container_width=True)
-
-        cat_counts = ev_df["attack_category"].value_counts().reset_index()
-        cat_counts.columns = ["category", "count"]
-        category_ph.plotly_chart(px.bar(cat_counts, x="category", y="count"), use_container_width=True)
-
-        sev_counts = ev_df["severity"].value_counts().reset_index()
-        sev_counts.columns = ["severity", "count"]
-        severity_ph.plotly_chart(
-            px.pie(sev_counts, names="severity", values="count", color="severity", color_discrete_map=SEVERITY_COLOR),
-            use_container_width=True)
-
-        recent_critical = [e for e in events[-15:] if e["severity"] in ("High", "Critical")][::-1]
-        if recent_critical:
-            triage_ph.markdown("\n\n".join(
-                f"**{e['attack_category']}** — {e['triage_note']}" for e in recent_critical[:8]))
-        else:
-            triage_ph.info("No High/Critical events yet in this run.")
-    else:
+    if not events:
         feed_ph.info("No events yet - click Start Simulation.")
+        explain_select_ph.empty()
+        explain_panel_ph.info("No High/Critical events yet to explain.")
+        return
+
+    feed_df = pd.DataFrame(events[-20:][::-1])
+    feed_ph.dataframe(
+        feed_df[["true_label", "attack_category", "confidence", "anomaly_score", "threat_score", "severity"]],
+        use_container_width=True, height=380)
+
+    high_critical = [(i, e) for i, e in enumerate(events) if e["severity"] in ("High", "Critical")]
+    if high_critical:
+        options = {f"Event #{i} — {e['attack_category']} — {e['severity']}": e for i, e in high_critical[::-1]}
+        selected_label = explain_select_ph.selectbox(
+            "Pick an event:", list(options.keys()), key=f"explain_select_{len(events)}")
+        with explain_panel_ph.container():
+            render_explain_panel(options[selected_label])
+    else:
+        explain_select_ph.empty()
+        explain_panel_ph.info("No High/Critical events yet to explain.")
+
+    ev_df = pd.DataFrame(events)
+
+    timeline = ev_df.reset_index().rename(columns={"index": "event_order"})
+    fig1 = px.scatter(timeline, x="event_order", y="threat_score", color="severity",
+                       color_discrete_map=SEVERITY_COLOR)
+    timeline_ph.plotly_chart(fig1, use_container_width=True)
+
+    cat_counts = ev_df["attack_category"].value_counts().reset_index()
+    cat_counts.columns = ["category", "count"]
+    category_ph.plotly_chart(px.bar(cat_counts, x="category", y="count"), use_container_width=True)
+
+    sev_counts = ev_df["severity"].value_counts().reset_index()
+    sev_counts.columns = ["severity", "count"]
+    severity_ph.plotly_chart(
+        px.pie(sev_counts, names="severity", values="count", color="severity", color_discrete_map=SEVERITY_COLOR),
+        use_container_width=True)
+
+    recent_critical = [e for e in events[-15:] if e["severity"] in ("High", "Critical")][::-1]
+    if recent_critical:
+        triage_ph.markdown("\n\n".join(
+            f"**{e['attack_category']}** — {e['triage_note']}" for e in recent_critical[:8]))
+    else:
+        triage_ph.info("No High/Critical events yet in this run.")
 
 
 render(st.session_state.events, st.session_state.total, st.session_state.threats, st.session_state.critical)
