@@ -7,6 +7,7 @@ mapping, not an official/verified MITRE certification.
 """
 
 import numpy as np
+import shap
 
 MITRE_MAPPING = {
     "DDoS": ("T1498", "Network Denial of Service"),
@@ -54,16 +55,50 @@ def get_global_top_features(model, feature_cols, top_n=5):
     idx = np.argsort(importances)[::-1][:top_n]
     return [(feature_cols[i], float(importances[i])) for i in idx]
 
+_explainer_cache = {}
 
-def build_triage_note(category: str, severity: str, confidence: float, top_features: list) -> str:
+def get_shap_top_features(model, model_name, X_row, feature_cols, top_n=3):
+    """
+    Per-instance explainability using SHAP - explains THIS specific prediction,
+    not just global model behavior. Falls back to empty list if the model
+    type isn't tree-based (SHAP TreeExplainer only supports RF/XGBoost cleanly).
+    """
+    if model_name not in ("XGBoost", "RandomForest"):
+        return []
+    try:
+        if model_name not in _explainer_cache:
+            _explainer_cache[model_name] = shap.TreeExplainer(model)
+        explainer = _explainer_cache[model_name]
+        shap_values = explainer.shap_values(X_row)
+
+        if isinstance(shap_values, list):
+            pred_class_idx = int(np.argmax(model.predict_proba(X_row)[0]))
+            values = shap_values[pred_class_idx][0]
+        else:
+            pred_class_idx = int(np.argmax(model.predict_proba(X_row)[0]))
+            values = shap_values[0, :, pred_class_idx]
+
+        idx = np.argsort(np.abs(values))[::-1][:top_n]
+        return [(feature_cols[i], float(values[i])) for i in idx]
+    except Exception:
+        return []  # never let explainability break the live dashboard
+
+
+def build_triage_note(category: str, severity: str, confidence: float, top_features: list, is_shap: bool = False) -> str:
     if category == "BENIGN":
         return "No action needed — traffic matches normal baseline patterns."
 
     technique = MITRE_MAPPING.get(category)
     tech_str = f"{technique[0]} ({technique[1]})" if technique else "no direct MITRE mapping available"
-    feat_str = ", ".join(f for f, _ in top_features[:3]) if top_features else "overall flow statistics"
+    if top_features:
+        if is_shap:
+            feat_str = ", ".join(f"{f} ({'↑' if v > 0 else '↓'} contribution)" for f, v in top_features[:3])
+        else:
+            feat_str = ", ".join(f for f, _ in top_features[:3])
+    else:
+        feat_str = "overall flow statistics"
     action = RECOMMENDED_ACTIONS.get(category, "Investigate source traffic and correlate with other alerts.")
 
     return (f"Flagged as {category} ({confidence*100:.0f}% classifier confidence, severity {severity}). "
-            f"Maps to MITRE ATT&CK {tech_str}. Driven primarily by model signal from: {feat_str}. "
+            f"Maps to MITRE ATT&CK {tech_str}. Driven primarily by: {feat_str}. "
             f"Recommended action: {action}")
